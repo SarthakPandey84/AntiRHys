@@ -8,6 +8,8 @@ import math
 import time
 import csv
 from datetime import datetime
+import threading
+import sounddevice as sd
 
 app = FastAPI(title="Fatigue Detection API")
 
@@ -33,6 +35,27 @@ RIGHT_EYE = [362, 385, 387, 263, 373, 380]
 
 EAR_THRESHOLD = 0.25
 CONSECUTIVE_FRAMES_THRESHOLD = 15
+
+# Backend Alarm Logic
+alarm_thread = None
+
+def play_alarm_sound():
+    duration = 10.0  # seconds
+    sample_rate = 44100
+    t = np.linspace(0, duration, int(sample_rate * duration), False)
+    # Alternating 800 Hz and 1000 Hz every 0.5s for a siren effect
+    freq = np.where((t % 1.0) < 0.5, 800, 1000)
+    phase = 2 * np.pi * np.cumsum(freq) / sample_rate
+    # Loud sine wave
+    wave = 0.8 * np.sin(phase)
+    sd.play(wave, sample_rate)
+    sd.wait()
+
+def trigger_alarm():
+    global alarm_thread
+    if alarm_thread is None or not alarm_thread.is_alive():
+        alarm_thread = threading.Thread(target=play_alarm_sound)
+        alarm_thread.start()
 
 def euclidean_distance(p1, p2):
     return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
@@ -137,8 +160,9 @@ async def detect_fatigue(websocket: WebSocket):
                         is_drowsy = True
                     else:
                         is_drowsy = False
-                        
                 current_state = "Drowsy" if is_drowsy else "Alert"
+                if current_state == "Drowsy":
+                    trigger_alarm()
                 
                 # Logging state changes
                 if current_state != last_logged_state:
@@ -159,6 +183,9 @@ async def detect_fatigue(websocket: WebSocket):
                     is_drowsy = False
                     
                 current_state = "Drowsy" if is_drowsy else "Alert"
+                if current_state == "Drowsy":
+                    trigger_alarm()
+                    
                 response_payload["state"] = current_state
                 
             await websocket.send_json(response_payload)
