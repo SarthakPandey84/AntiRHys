@@ -1,16 +1,77 @@
-import React from 'react';
-import { Eye, EyeOff, Activity, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Eye, EyeOff, Activity, AlertTriangle, FileText } from 'lucide-react';
 import type { DetectionState } from '../App';
 
 interface DashboardProps {
   data: DetectionState;
 }
 
+// Create a single AudioContext to avoid hitting browser limits
+let audioCtx: AudioContext | null = null;
+
+const initAudio = () => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+};
+
+const playAlarm = () => {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gainNode = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+  osc.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  osc.start();
+  gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.5);
+  osc.stop(audioCtx.currentTime + 0.5);
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ data }) => {
   const isDrowsy = data.state === 'Drowsy';
+  const alarmIntervalRef = useRef<number | null>(null);
+  const [alarmEnabled, setAlarmEnabled] = useState(false);
+
+  useEffect(() => {
+    // We try to init audio when component mounts or state changes
+    // But user interaction is usually required first
+    if (isDrowsy && alarmEnabled) {
+      if (!alarmIntervalRef.current) {
+        initAudio();
+        playAlarm(); // play immediately
+        alarmIntervalRef.current = window.setInterval(playAlarm, 800);
+      }
+    } else {
+      if (alarmIntervalRef.current) {
+        clearInterval(alarmIntervalRef.current);
+        alarmIntervalRef.current = null;
+      }
+    }
+  }, [isDrowsy, alarmEnabled]);
+
+  const handleEnableAlarm = () => {
+    initAudio();
+    setAlarmEnabled(true);
+  };
 
   return (
     <div className="dashboard-container glass-panel">
+      {!alarmEnabled && (
+        <div style={{ marginBottom: '1rem', background: 'rgba(255,200,0,0.1)', padding: '0.5rem', borderRadius: '8px', border: '1px solid #eab308' }}>
+          <p style={{ color: '#eab308', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+            Audible alarm is disabled. Click below to enable audio.
+          </p>
+          <button className="btn btn-primary" onClick={handleEnableAlarm} style={{ padding: '0.4rem 0.8rem', fontSize: '0.9rem' }}>
+            Enable Alarm
+          </button>
+        </div>
+      )}
+
       <div className={`status-card ${isDrowsy ? 'drowsy' : 'alert'}`}>
         {isDrowsy ? (
           <EyeOff size={64} color="#ef4444" />
@@ -55,6 +116,16 @@ const Dashboard: React.FC<DashboardProps> = ({ data }) => {
           </div>
           <div className="stat-value" style={{ color: '#94a3b8', fontSize: '1.2rem' }}>
             0.25
+          </div>
+        </div>
+
+        <div className="stat-row" style={{ marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+          <div className="stat-label">
+            <FileText size={18} />
+            Data Logging
+          </div>
+          <div className="stat-value" style={{ fontSize: '0.9rem', color: '#22c55e' }}>
+            Active (session_log.csv)
           </div>
         </div>
       </div>

@@ -5,6 +5,9 @@ import base64
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import math
+import time
+import csv
+from datetime import datetime
 
 app = FastAPI(title="Fatigue Detection API")
 
@@ -58,6 +61,8 @@ async def detect_fatigue(websocket: WebSocket):
     blink_count = 0
     is_drowsy = False
     was_closed = False
+    drowsy_trigger_time = 0
+    last_logged_state = "Alert"
     
     try:
         while True:
@@ -122,15 +127,39 @@ async def detect_fatigue(websocket: WebSocket):
                             blink_count += 1
                         was_closed = False
                     consecutive_closed_frames = 0
-                    is_drowsy = False
                 
+                # Check Drowsy hold time (10 seconds)
                 if consecutive_closed_frames >= CONSECUTIVE_FRAMES_THRESHOLD:
                     is_drowsy = True
-                    
+                    drowsy_trigger_time = time.time()
+                else:
+                    if is_drowsy and (time.time() - drowsy_trigger_time < 10.0):
+                        is_drowsy = True
+                    else:
+                        is_drowsy = False
+                        
+                current_state = "Drowsy" if is_drowsy else "Alert"
+                
+                # Logging state changes
+                if current_state != last_logged_state:
+                    with open("session_log.csv", "a", newline="") as f:
+                        writer = csv.writer(f)
+                        writer.writerow([datetime.now().isoformat(), current_state, avg_ear, blink_count])
+                    last_logged_state = current_state
+                
                 response_payload["ear"] = round(avg_ear, 3)
-                response_payload["state"] = "Drowsy" if is_drowsy else "Alert"
+                response_payload["state"] = current_state
                 response_payload["blink_count"] = blink_count
                 response_payload["landmarks"] = landmarks_list
+            else:
+                # If face is lost, still enforce the 10 second hold for drowsiness
+                if is_drowsy and (time.time() - drowsy_trigger_time < 10.0):
+                    is_drowsy = True
+                else:
+                    is_drowsy = False
+                    
+                current_state = "Drowsy" if is_drowsy else "Alert"
+                response_payload["state"] = current_state
                 
             await websocket.send_json(response_payload)
             
