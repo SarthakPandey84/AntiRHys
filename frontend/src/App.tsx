@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import CameraStream from './components/CameraStream';
 import Dashboard from './components/Dashboard';
 
