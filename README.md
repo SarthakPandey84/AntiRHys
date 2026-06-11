@@ -1,32 +1,63 @@
-# Driver Fatigue and Road Hypnosis Detection Prototype
+# 🚗 AntiRHys: Driver Fatigue & Road Hypnosis Detection
 
-A real-time full-stack web application designed to detect driver fatigue and road hypnosis. It uses a React frontend to capture a live webcam feed and stream it via WebSockets to a FastAPI backend. The backend processes the frames using OpenCV and MediaPipe Face Mesh to calculate the Eye Aspect Ratio (EAR), triggering alerts when prolonged eye closure is detected.
+[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)](https://reactjs.org/)
+[![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![OpenCV](https://img.shields.io/badge/opencv-%23white.svg?style=for-the-badge&logo=opencv&logoColor=white)](https://opencv.org/)
 
-## Tech Stack
-- **Backend**: Python, FastAPI, WebSockets, OpenCV, MediaPipe
-- **Frontend**: React (TypeScript), Vite, HTML Canvas, Lucide React
-- **Styling**: Vanilla CSS with a modern dark-mode, glassmorphism aesthetic
+**AntiRHys** is a real-time, full-stack web application meticulously designed to detect driver fatigue and prevent road hypnosis. 
 
-## Prerequisites
-- Node.js (v18+ recommended)
-- Python 3.9+
+By capturing a live webcam feed and securely streaming it via WebSockets to a high-performance backend, the system continuously analyzes the driver's facial landmarks. Using the **Eye Aspect Ratio (EAR)**, it triggers robust visual and audible alerts when prolonged eye closure is detected, ensuring the driver stays awake and safe.
 
-## Installation & Setup
+---
+
+## ✨ Key Features
+
+- **👀 Real-Time Monitoring:** Low-latency WebSocket streaming for instant fatigue detection.
+- **🚨 Intelligent Alerts:** Visual dashboard warnings combined with an unmissable **Audible Alarm** when drowsiness is detected for an extended period.
+- **📊 Session Data Logging:** Automatically records blink counts, alert events, and drowsiness timestamps into a CSV file for post-session analysis.
+- **🛡️ Robust State Tracking:** Ensures false positives are minimized and sustained drowsiness triggers a persistent alert mechanism.
+- **🎨 Premium UI/UX:** A stunning glassmorphism, dark-mode dashboard tailored for seamless interaction.
+
+---
+
+## 🛠️ Tech Stack
+
+### Backend
+- **Python 3** & **FastAPI**
+- **WebSockets** for real-time video frame transmission
+- **OpenCV** & **MediaPipe Face Mesh** for precise facial landmark detection
+- **SoundDevice** & **NumPy** for audible alerts
+
+### Frontend
+- **React (TypeScript)** built with **Vite**
+- **HTML Canvas** for frame rendering
+- **Lucide React** for crisp, modern iconography
+- Vanilla CSS with a polished **Glassmorphism Aesthetic**
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v18+ recommended)
+- [Python](https://www.python.org/) (3.9+)
 
 ### 1. Backend Setup
-1. Open a terminal and navigate to the `backend` directory:
+
+1. Open a terminal and navigate to the backend directory:
    ```bash
    cd backend
    ```
 2. Create and activate a virtual environment:
    ```bash
    python -m venv venv
-   # On Windows:
+   # Windows:
    venv\Scripts\activate
-   # On Mac/Linux:
+   # Mac/Linux:
    # source venv/bin/activate
    ```
-3. Install the dependencies:
+3. Install the required dependencies:
    ```bash
    pip install -r requirements.txt
    ```
@@ -34,14 +65,15 @@ A real-time full-stack web application designed to detect driver fatigue and roa
    ```bash
    uvicorn main:app --reload --host 0.0.0.0 --port 8000
    ```
-   The backend WebSocket will now be listening on `ws://localhost:8000/ws/detect`.
+   *The WebSocket will now listen on `ws://localhost:8000/ws/detect`.*
 
 ### 2. Frontend Setup
-1. Open a new terminal and navigate to the `frontend` directory:
+
+1. Open a new terminal and navigate to the frontend directory:
    ```bash
    cd frontend
    ```
-2. Install the dependencies:
+2. Install the Node modules:
    ```bash
    npm install
    ```
@@ -50,8 +82,15 @@ A real-time full-stack web application designed to detect driver fatigue and roa
    npm run dev
    ```
 
-## Usage
-1. Open the URL provided by Vite (typically `http://localhost:5173`) in your browser.
-2. Allow the browser to access your camera.
-3. Click "Start Camera".
-4. The backend will begin returning real-time EAR values. If you close your eyes for an extended period, the dashboard will flash red and alert you that the driver is sleeping.
+---
+
+## 🚦 Usage Guide
+
+1. Navigate to the Vite URL (typically `http://localhost:5173`) in your browser.
+2. Grant the application permission to access your webcam.
+3. Click the **"Start Camera"** button to initiate tracking.
+4. The system will start calculating your EAR in real-time. If you close your eyes for an extended period, the dashboard will flash red, sound an alarm, and log the event.
+5. Click **"Stop Camera"** to end the session. The backend will automatically finalize and save the session log as a `.csv` file in the `backend` directory.
+
+---
+*Stay alert, stay safe.* 🛣️
