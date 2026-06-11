@@ -9,7 +9,12 @@ import time
 import csv
 from datetime import datetime
 import threading
-import sounddevice as sd
+try:
+    import sounddevice as sd
+    has_audio_device = True
+except Exception as e:
+    print(f"Warning: sounddevice could not be imported (expected on headless servers): {e}")
+    has_audio_device = False
 
 app = FastAPI(title="Fatigue Detection API")
 
@@ -40,6 +45,8 @@ CONSECUTIVE_FRAMES_THRESHOLD = 15
 alarm_thread = None
 
 def play_alarm_sound():
+    if not has_audio_device:
+        return
     duration = 10.0  # seconds
     sample_rate = 44100
     t = np.linspace(0, duration, int(sample_rate * duration), False)
@@ -48,8 +55,11 @@ def play_alarm_sound():
     phase = 2 * np.pi * np.cumsum(freq) / sample_rate
     # Loud sine wave
     wave = 0.8 * np.sin(phase)
-    sd.play(wave, sample_rate)
-    sd.wait()
+    try:
+        sd.play(wave, sample_rate)
+        sd.wait()
+    except Exception as e:
+        print(f"Audio playback error: {e}")
 
 def trigger_alarm():
     global alarm_thread

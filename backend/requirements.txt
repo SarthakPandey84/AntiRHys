@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 websockets
-opencv-python
+opencv-python-headless
 mediapipe
 pydantic
+numpy
+sounddevice

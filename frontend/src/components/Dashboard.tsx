@@ -18,17 +18,28 @@ const initAudio = () => {
   }
 };
 
+let isHighTone = false;
 const playAlarm = () => {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const gainNode = audioCtx.createGain();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+  
+  // High volume sine wave for siren
+  osc.type = 'sine';
+  const freq = isHighTone ? 1000 : 800;
+  isHighTone = !isHighTone;
+  
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  
   osc.connect(gainNode);
   gainNode.connect(audioCtx.destination);
-  osc.start();
+  
+  // Set high gain
+  gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime);
+  gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime + 0.45);
   gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.5);
+  
+  osc.start();
   osc.stop(audioCtx.currentTime + 0.5);
 };
 
@@ -43,8 +54,9 @@ const Dashboard: React.FC<DashboardProps> = ({ data }) => {
     if (isDrowsy && alarmEnabled) {
       if (!alarmIntervalRef.current) {
         initAudio();
+        isHighTone = false; // reset
         playAlarm(); // play immediately
-        alarmIntervalRef.current = window.setInterval(playAlarm, 800);
+        alarmIntervalRef.current = window.setInterval(playAlarm, 500);
       }
     } else {
       if (alarmIntervalRef.current) {

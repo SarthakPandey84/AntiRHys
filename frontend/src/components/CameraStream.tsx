@@ -7,7 +7,7 @@ interface CameraStreamProps {
   landmarks: { x: number; y: number }[];
 }
 
-const WS_URL = 'ws://localhost:8000/ws/detect';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/detect';
 
 const CameraStream: React.FC<CameraStreamProps> = ({ onDetectionUpdate, landmarks }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
