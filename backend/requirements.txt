@@ -2,7 +2,7 @@ fastapi
 uvicorn
 websockets
 opencv-python-headless
-mediapipe
+mediapipe==0.10.14
 pydantic
 numpy
 sounddevice
