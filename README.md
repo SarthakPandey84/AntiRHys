@@ -93,4 +93,5 @@ By capturing a live webcam feed and securely streaming it via WebSockets to a hi
 5. Click **"Stop Camera"** to end the session. The backend will automatically finalize and save the session log as a `.csv` file in the `backend` directory.
 
 ---
+
 *Stay alert, stay safe.* 🛣️
