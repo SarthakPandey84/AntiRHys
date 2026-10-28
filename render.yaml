@@ -10,7 +10,7 @@ services:
       - key: MAX_CONCURRENT_SESSIONS
         value: "10"
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: "https://antirhys.vercel.app,http://localhost:5173,http://localhost:3000"
       - key: AUTH_TOKEN
         sync: false
       - key: SESSION_LOG_PATH

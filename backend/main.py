@@ -47,13 +47,14 @@ MIN_FRAME_HEIGHT = 64
 MAX_CONCURRENT_SESSIONS = int(os.getenv("MAX_CONCURRENT_SESSIONS", "10"))
 MIN_FRAME_INTERVAL_SEC = 0.03            # Throttle processing to max ~30 FPS
 
-# Safe default origins: restricted to local development unless explicitly configured
+# Safe default origins: restricted to local development and official Vercel deployment
 DEFAULT_DEV_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
-    "http://testserver"
+    "http://testserver",
+    "https://antirhys.vercel.app"
 ]
 
 ALLOWED_ORIGINS_ENV = os.getenv("ALLOWED_ORIGINS", "")
@@ -147,7 +148,12 @@ def is_origin_allowed(origin: Optional[str]) -> bool:
         return not bool(ALLOWED_ORIGINS_ENV)
     norm_origin = origin.rstrip("/").lower()
     allowed_norm = [o.rstrip("/").lower() for o in ALLOWED_ORIGINS]
-    return norm_origin in allowed_norm
+    if norm_origin in allowed_norm:
+        return True
+    # Allow Vercel preview and production deployments by default
+    if norm_origin.startswith("https://") and norm_origin.endswith(".vercel.app"):
+        return True
+    return False
 
 
 def is_token_authorized(websocket: WebSocket) -> bool:

@@ -5,7 +5,7 @@
 [![Vite](https://img.shields.io/badge/Vite-646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-white.svg?style=for-the-badge&logo=opencv&logoColor=white)](https://opencv.org/)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-00897B.svg?style=for-the-badge&logo=google&logoColor=white)](https://developers.google.com/mediapipe)
-[![Tests Passing](https://img.shields.io/badge/Pytest-93%20Passed-brightgreen?style=for-the-badge&logo=pytest)](https://pytest.org/)
+[![Tests Passing](https://img.shields.io/badge/Pytest-94%20Passed-brightgreen?style=for-the-badge&logo=pytest)](https://pytest.org/)
 
 **AntiRHys** is a computer-vision research system investigating observable physiological and behavioral cues associated with **driver drowsiness**, **micro-sleeps**, and **road hypnosis (highway hypnosis)**.
 
@@ -55,7 +55,7 @@ The project currently provides an interactive, responsive full-stack demonstrati
 AntiRHys is an active **research prototype and demonstration harness**.
 
 - **Detection Engine:** Implemented with verified mathematical Eye Aspect Ratio (EAR), rolling 60-second Percentage of Eye Closure (PERCLOS), blink dynamic tracking, and an independent monotonic temporal state machine.
-- **Verification Level:** Evaluated through 93 deterministic automated tests and simulated driver behavioral benchmarks. It is **not yet validated on in-vehicle naturalistic driving cohorts**.
+- **Verification Level:** Evaluated through 94 deterministic automated tests and simulated driver behavioral benchmarks. It is **not yet validated on in-vehicle naturalistic driving cohorts**.
 - **Interface:** Responsive web dashboard (desktop, tablet, and smartphone web browsers) connected to a local or remote FastAPI WebSocket service.
 
 ---
@@ -388,7 +388,7 @@ The web dashboard is fully optimized for smartphones and tablets:
 All changes in the AntiRHys codebase undergo rigorous verification:
 
 ```bash
-# 1. Run all backend tests (93 tests):
+# 1. Run all backend tests (94 tests):
 cd backend
 # On Windows PowerShell:
 $env:PYTHONPATH="backend"; pytest tests/ -v
@@ -403,8 +403,8 @@ npm run lint
 npm run build
 ```
 
-### Verified Test Suite Breakdown (93 Total Passed):
-- `tests/test_api.py` (12 tests): Health checks, WebSocket lifecycle, server-authoritative session IDs, concurrency bounds, token authentication, payload schema validation.
+### Verified Test Suite Breakdown (94 Total Passed):
+- `tests/test_api.py` (13 tests): Health checks, WebSocket lifecycle, server-authoritative session IDs, concurrency bounds, token authentication, origin validation (including Vercel deployment origins), payload schema validation.
 - `tests/test_baseline_calibrator.py` (6 tests): Valid calibration, insufficient duration rejection, tracking ratio gates, drowsiness during calibration rejection, threshold clamping bounds ($0.18\text{--}0.32$), JSON serialization.
 - `tests/test_baseline_integration.py` (15 tests): Active threshold consumption, safe fallback on failed calibration, file persistence error resilience, WebSocket control commands without frames, dynamic camera resolution change invalidation, non-monotonic timestamp clamping, user abort command lifecycle, repeated start idempotency, client session ID stale-packet filtering, prior baseline clearing on failure/abort, mid-calibration resolution shift abort, client timestamp echoing, and retry after failure.
 - `tests/test_detector.py` (13 tests): EAR geometry, degenerate zero-width points, non-finite values, state machine transitions, blink counting, tracking loss isolation.

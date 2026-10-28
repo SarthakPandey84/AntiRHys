@@ -220,3 +220,9 @@ def test_origin_validation_when_restricted(client):
     finally:
         main.ALLOWED_ORIGINS = original_origins
         main.ALLOWED_ORIGINS_ENV = original_env
+
+def test_origin_validation_allows_vercel_deployments():
+    """Test that Vercel production and preview deployment origins are accepted."""
+    assert main.is_origin_allowed("https://antirhys.vercel.app") is True
+    assert main.is_origin_allowed("https://antirhys-preview-123.vercel.app") is True
+    assert main.is_origin_allowed("https://malicious-site.com") is False

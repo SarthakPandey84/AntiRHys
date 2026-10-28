@@ -12,7 +12,7 @@ interface CameraStreamProps {
   onRegisterSendCommand?: (sendCommand: (command: string, extra?: Record<string, unknown>) => boolean) => void;
 }
 
-const MAX_RECONNECT_ATTEMPTS = 5;
+const MAX_RECONNECT_ATTEMPTS = 20;
 const STALE_TIMEOUT_MS = 2500;
 const MAX_BUFFERED_BYTES = 64 * 1024; // 64 KB buffer threshold
 
@@ -195,8 +195,8 @@ const CameraStream: React.FC<CameraStreamProps> = ({
         // Attempt reconnection if streaming is active and attempts under limit
         if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
           const delay = Math.min(
-            1000 * Math.pow(1.5, reconnectAttemptsRef.current),
-            10000
+            1000 * Math.pow(1.3, reconnectAttemptsRef.current),
+            4000
           );
           reconnectAttemptsRef.current += 1;
           updateConnectionStatus('reconnecting');

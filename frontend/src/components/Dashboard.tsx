@@ -199,7 +199,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   } else if (isConnecting) {
     cardClass += ' connecting';
     statusTitle = 'CONNECTING...';
-    statusDescription = 'Establishing real-time connection with detection server.';
+    statusDescription = connectionStatus === 'reconnecting' ? 'Connecting to detection server... (Cloud backend may take ~30-50s to wake up if idle).' : 'Establishing real-time connection with detection server.';
     StatusIcon = Activity;
     iconColor = '#eab308';
   } else if (isStale) {
