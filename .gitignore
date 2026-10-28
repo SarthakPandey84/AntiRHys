@@ -1,0 +1,43 @@
+# AntiRHys Root Git Ignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+fontlist-*.json
+
+# Logs & Diagnostics
+session_log.csv
+*.log
+backend/session_log.csv
+
+# Environment & Credentials
+.env
+.env.local
+.env.*.local
+!.env.example
+backend/.env
+backend/.env.local
+frontend/.env
+frontend/.env.local
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# OS & Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

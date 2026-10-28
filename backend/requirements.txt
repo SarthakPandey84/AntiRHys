@@ -5,4 +5,4 @@ opencv-python-headless
 mediapipe==0.10.14
 pydantic
 numpy
-sounddevice
+pytest

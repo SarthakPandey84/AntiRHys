@@ -2,3 +2,7 @@ venv/
 __pycache__/
 *.pyc
 session_log.csv
+fontlist-*.json
+.env
+.env.local
+.pytest_cache/

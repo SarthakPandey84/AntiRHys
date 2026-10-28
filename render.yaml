@@ -7,3 +7,11 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
+      - key: MAX_CONCURRENT_SESSIONS
+        value: "10"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: AUTH_TOKEN
+        sync: false
+      - key: SESSION_LOG_PATH
+        value: "session_log.csv"
