@@ -470,22 +470,39 @@ python benchmark_pipeline.py --iterations 100 --width 640 --height 480
 ## 23. Product Roadmap
 
 ```mermaid
-gantt
-    title AntiRHys Evolutionary Roadmap
-    dateFormat  YYYY-Q#
-    section Phase 1: Prototype
-    EAR & Monotonic State Machine     :done, 2026-Q1, 2026-Q2
-    Rolling PERCLOS & Mobile Web UI   :done, 2026-Q2, 2026-Q3
-    Personalized Baseline Module      :done, 2026-Q3, 2026-Q4
-    section Phase 2: Multisignal
-    3D Head Pose (solvePnP)           :active, 2026-Q4, 2027-Q1
-    Gaze Direction & Entropy Engine   :2027-Q1, 2027-Q2
-    Modular Evidence Fusion Engine    :2027-Q2, 2027-Q3
-    section Phase 3: Hardware
-    NIR Sensor & Lens Evaluation      :2027-Q3, 2027-Q4
-    Embedded NPU Runtime (TFLite/ONNX):2027-Q4, 2028-Q1
-    In-Vehicle Pilot Testing          :2028-Q1, 2028-Q3
+flowchart LR
+    subgraph P1["Phase 1: Validated Core (Completed)"]
+        direction TB
+        A1["EAR & Temporal State Machine"]
+        A2["Rolling 60s PERCLOS Engine"]
+        A3["Personalized Baseline Calibrator"]
+        A1 --> A2 --> A3
+    end
+
+    subgraph P2["Phase 2: Multisignal Research (Active)"]
+        direction TB
+        B1["3D Head Pose (solvePnP)"]
+        B2["Gaze Zone & Scanning Entropy"]
+        B3["Modular Evidence Fusion Engine"]
+        B1 --> B2 --> B3
+    end
+
+    subgraph P3["Phase 3: Hardware Target (Future)"]
+        direction TB
+        C1["Near-IR Optics & 850nm/940nm LEDs"]
+        C2["Edge NPU Runtime (Hailo / RK3588)"]
+        C3["In-Cabin Vehicle Pilot Testing"]
+        C1 --> C2 --> C3
+    end
+
+    P1 ==> P2 ==> P3
 ```
+
+| Phase | Milestone | Focus Area | Status | Deliverables |
+| :--- | :--- | :--- | :--- | :--- |
+| **Phase 1** | **Validated Prototype** | Ocular Perception & Personalization | **Completed** | Monotonic state machine, rolling 60s PERCLOS, personalized baseline calibration, mobile web UI |
+| **Phase 2** | **Multimodal Research** | Multisignal Perception & Fusion | **In Progress** | 3D head-pose telemetry (`solvePnP`), gaze scanning entropy, modular rule-based fusion |
+| **Phase 3** | **Dedicated Product** | Autonomous In-Cabin Hardware Unit | **Future** | Active Near-IR illumination, quantized edge NPU (offline), hardwired vehicle CAN alert bus |
 
 - **Short-Term (Near Term):**
   - Integrate baseline calibrator into the interactive frontend UI.
