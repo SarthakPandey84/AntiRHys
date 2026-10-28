@@ -7,6 +7,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
+      - key: ENVIRONMENT
+        value: "production"
       - key: MAX_CONCURRENT_SESSIONS
         value: "10"
       - key: ALLOWED_ORIGINS

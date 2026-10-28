@@ -11,6 +11,7 @@ import base64
 import binascii
 from contextlib import asynccontextmanager
 import json
+import hmac
 import math
 import os
 import time
@@ -47,23 +48,54 @@ MIN_FRAME_HEIGHT = 64
 MAX_CONCURRENT_SESSIONS = int(os.getenv("MAX_CONCURRENT_SESSIONS", "10"))
 MIN_FRAME_INTERVAL_SEC = 0.03            # Throttle processing to max ~30 FPS
 
-# Safe default origins: restricted to local development and official Vercel deployment
-DEFAULT_DEV_ORIGINS = [
+# Environment mode: "production" vs "development"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "").strip().lower()
+IS_PRODUCTION = (
+    ENVIRONMENT == "production"
+    or bool(os.getenv("RENDER"))
+    or bool(os.getenv("VERCEL"))
+)
+
+# Trusted origins
+OFFICIAL_PRODUCTION_ORIGIN = "https://antirhys.vercel.app"
+
+DEV_DEFAULT_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
     "http://testserver",
-    "https://antirhys.vercel.app"
+    OFFICIAL_PRODUCTION_ORIGIN
 ]
 
+PRODUCTION_DEFAULT_ORIGINS = [
+    OFFICIAL_PRODUCTION_ORIGIN
+]
+
+
+def parse_allowed_origins(raw_env: str) -> list[str]:
+    """Parse comma-separated origin list, sanitizing whitespace and trailing slashes."""
+    if not raw_env:
+        return []
+    cleaned = []
+    for item in raw_env.split(","):
+        stripped = item.strip()
+        if stripped:
+            if stripped == "*":
+                return ["*"]
+            cleaned.append(stripped.rstrip("/").lower())
+    return cleaned
+
+
 ALLOWED_ORIGINS_ENV = os.getenv("ALLOWED_ORIGINS", "")
-if not ALLOWED_ORIGINS_ENV:
-    ALLOWED_ORIGINS = DEFAULT_DEV_ORIGINS
-elif ALLOWED_ORIGINS_ENV == "*":
-    ALLOWED_ORIGINS = ["*"]
+PARSED_ENV_ORIGINS = parse_allowed_origins(ALLOWED_ORIGINS_ENV)
+
+if PARSED_ENV_ORIGINS:
+    ALLOWED_ORIGINS = PARSED_ENV_ORIGINS
+elif IS_PRODUCTION:
+    ALLOWED_ORIGINS = PRODUCTION_DEFAULT_ORIGINS
 else:
-    ALLOWED_ORIGINS = [orig.strip() for orig in ALLOWED_ORIGINS_ENV.split(",") if orig.strip()]
+    ALLOWED_ORIGINS = DEV_DEFAULT_ORIGINS
 
 # Authentication token for session authorization
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "").strip()
@@ -97,8 +129,11 @@ def create_isolated_face_mesh() -> mp.solutions.face_mesh.FaceMesh:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("AntiRHys backend initialized.")
-    if not AUTH_TOKEN:
+    mode = "production" if IS_PRODUCTION else "development"
+    print(f"AntiRHys backend initialized in {mode} mode.")
+    if AUTH_TOKEN:
+        print("[AntiRHys Security Notice] Token authentication is ENABLED.")
+    else:
         print("[AntiRHys Security Notice] AUTH_TOKEN not set. Running in unauthenticated mode.")
     yield
     print("AntiRHys backend shutting down.")
@@ -127,6 +162,7 @@ async def health_check():
         "status": "healthy",
         "service": "AntiRHys Drowsiness Detection API",
         "version": "2.0.0",
+        "environment": "production" if IS_PRODUCTION else "development",
         "active_sessions": active_sessions,
         "max_concurrent_sessions": MAX_CONCURRENT_SESSIONS,
         "auth_enabled": bool(AUTH_TOKEN),
@@ -138,42 +174,41 @@ def is_origin_allowed(origin: Optional[str]) -> bool:
     """
     Validate WebSocket origin against configured CORS rules.
     Prevents Cross-Site WebSocket Hijacking (CSWSH) from browser contexts.
-    Note: Origin validation alone does not authenticate the client.
+    Strictly forbids wildcard/arbitrary *.vercel.app hostnames in production.
     """
     if "*" in ALLOWED_ORIGINS:
         return True
+
     if not origin:
-        # In strict configured production, missing origin is disallowed.
-        # In default local development, allow missing origin for local scripts/tests.
-        return not bool(ALLOWED_ORIGINS_ENV)
-    norm_origin = origin.rstrip("/").lower()
-    allowed_norm = [o.rstrip("/").lower() for o in ALLOWED_ORIGINS]
-    if norm_origin in allowed_norm:
-        return True
-    # Allow Vercel preview and production deployments by default
-    if norm_origin.startswith("https://") and norm_origin.endswith(".vercel.app"):
-        return True
-    return False
+        # In production, browsers always send an Origin header for WebSockets.
+        # Disallow missing origins in production to prevent unauthorized bypasses.
+        # Allow missing origins in development for automated local tests and scripts.
+        return not IS_PRODUCTION and not bool(ALLOWED_ORIGINS_ENV)
+
+    norm_origin = origin.strip().rstrip("/").lower()
+    allowed_norm = [o.strip().rstrip("/").lower() for o in ALLOWED_ORIGINS]
+    return norm_origin in allowed_norm
 
 
 def is_token_authorized(websocket: WebSocket) -> bool:
     """
     Validate client authorization token when AUTH_TOKEN is configured.
     Supports query parameter ?token=... or Authorization: Bearer <token>.
+    Uses constant-time comparison to protect against timing attacks.
     """
     if not AUTH_TOKEN:
         return True
 
     # Check query param
     token = websocket.query_params.get("token")
-    if token and token == AUTH_TOKEN:
+    if token and hmac.compare_digest(token, AUTH_TOKEN):
         return True
 
     # Check Authorization header
     auth_header = websocket.headers.get("authorization")
     if auth_header:
         parts = auth_header.split()
-        if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1] == AUTH_TOKEN:
+        if len(parts) == 2 and parts[0].lower() == "bearer" and hmac.compare_digest(parts[1], AUTH_TOKEN):
             return True
 
     return False

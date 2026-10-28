@@ -35,6 +35,7 @@ def test_health_check_endpoint(client):
     assert "version" in data
     assert "active_sessions" in data
     assert "auth_enabled" in data
+    assert "environment" in data
 
 
 def test_websocket_detect_valid_frame(client, sample_base64_frame):
@@ -221,8 +222,138 @@ def test_origin_validation_when_restricted(client):
         main.ALLOWED_ORIGINS = original_origins
         main.ALLOWED_ORIGINS_ENV = original_env
 
-def test_origin_validation_allows_vercel_deployments():
-    """Test that Vercel production and preview deployment origins are accepted."""
-    assert main.is_origin_allowed("https://antirhys.vercel.app") is True
-    assert main.is_origin_allowed("https://antirhys-preview-123.vercel.app") is True
-    assert main.is_origin_allowed("https://malicious-site.com") is False
+def test_origin_validation_production_trusted_vs_untrusted_vercel():
+    """
+    Test that production mode strictly allows the official deployment origin
+    and rejects arbitrary *.vercel.app hostnames (preventing CSWSH).
+    """
+    orig_prod = main.IS_PRODUCTION
+    orig_origins = main.ALLOWED_ORIGINS
+    try:
+        main.IS_PRODUCTION = True
+        main.ALLOWED_ORIGINS = [main.OFFICIAL_PRODUCTION_ORIGIN]
+
+        # Official production origin allowed (with or without trailing slash)
+        assert main.is_origin_allowed("https://antirhys.vercel.app") is True
+        assert main.is_origin_allowed("https://antirhys.vercel.app/") is True
+
+        # Arbitrary / untrusted Vercel tenant origins strictly REJECTED in production
+        assert main.is_origin_allowed("https://attacker.vercel.app") is False
+        assert main.is_origin_allowed("https://unrelated-subdomain.vercel.app") is False
+        assert main.is_origin_allowed("https://evil.com") is False
+
+        # Missing origin strictly REJECTED in production mode
+        assert main.is_origin_allowed(None) is False
+        assert main.is_origin_allowed("") is False
+    finally:
+        main.IS_PRODUCTION = orig_prod
+        main.ALLOWED_ORIGINS = orig_origins
+
+
+def test_origin_validation_development_vs_production_mode():
+    """
+    Test behavior difference between development mode and production mode.
+    """
+    orig_prod = main.IS_PRODUCTION
+    orig_origins = main.ALLOWED_ORIGINS
+    orig_env = main.ALLOWED_ORIGINS_ENV
+    try:
+        # Development mode without explicit env: allows localhost and missing origin
+        main.IS_PRODUCTION = False
+        main.ALLOWED_ORIGINS_ENV = ""
+        main.ALLOWED_ORIGINS = main.DEV_DEFAULT_ORIGINS
+
+        assert main.is_origin_allowed(None) is True
+        assert main.is_origin_allowed("http://localhost:5173") is True
+        assert main.is_origin_allowed("https://antirhys.vercel.app") is True
+        assert main.is_origin_allowed("https://attacker.vercel.app") is False
+
+        # Production mode without env: disallows localhost and missing origin by default
+        main.IS_PRODUCTION = True
+        main.ALLOWED_ORIGINS = main.PRODUCTION_DEFAULT_ORIGINS
+
+        assert main.is_origin_allowed(None) is False
+        assert main.is_origin_allowed("http://localhost:5173") is False
+        assert main.is_origin_allowed("https://antirhys.vercel.app") is True
+    finally:
+        main.IS_PRODUCTION = orig_prod
+        main.ALLOWED_ORIGINS = orig_origins
+        main.ALLOWED_ORIGINS_ENV = orig_env
+
+
+def test_parse_allowed_origins_sanitization():
+    """
+    Test origin parsing and sanitization function across valid and malformed inputs.
+    """
+    # Trims whitespace, lowercases, and strips trailing slashes
+    raw = " https://antirhys.vercel.app/ , http://localhost:5173/ , https://ANOTHER.DOMAIN.COM/ "
+    parsed = main.parse_allowed_origins(raw)
+    assert parsed == [
+        "https://antirhys.vercel.app",
+        "http://localhost:5173",
+        "https://another.domain.com",
+    ]
+
+    # Empty string or commas only
+    assert main.parse_allowed_origins("") == []
+    assert main.parse_allowed_origins(" , , ") == []
+
+    # Wildcard origin
+    assert main.parse_allowed_origins(" * ") == ["*"]
+
+
+def test_origin_validation_wildcard_configuration():
+    """Test that explicit wildcard allows any origin."""
+    orig_origins = main.ALLOWED_ORIGINS
+    try:
+        main.ALLOWED_ORIGINS = ["*"]
+        assert main.is_origin_allowed("https://any-site.com") is True
+        assert main.is_origin_allowed(None) is True
+    finally:
+        main.ALLOWED_ORIGINS = orig_origins
+
+
+def test_authentication_disabled_by_default(client, sample_base64_frame):
+    """Test that when AUTH_TOKEN is not configured, connections proceed without tokens."""
+    orig_token = main.AUTH_TOKEN
+    try:
+        main.AUTH_TOKEN = ""
+        with client.websocket_connect("/ws/detect") as ws:
+            ws.send_text(sample_base64_frame)
+            res = ws.receive_json()
+            assert "session_id" in res
+    finally:
+        main.AUTH_TOKEN = orig_token
+
+
+def test_websocket_reconnection_lifecycle(client, sample_base64_frame):
+    """
+    Verify complete connection, frame processing, disconnect, session cleanup,
+    and clean immediate reconnection.
+    """
+    assert main.active_sessions == 0
+
+    # 1. First session connects
+    with client.websocket_connect("/ws/detect") as ws1:
+        assert main.active_sessions == 1
+        ws1.send_text(sample_base64_frame)
+        res1 = ws1.receive_json()
+        assert "session_id" in res1
+        session_id_1 = res1["session_id"]
+        assert main.active_sessions == 1
+
+    # First session disconnected - active_sessions decremented
+    assert main.active_sessions == 0
+
+    # 2. Reconnect immediately - creates new independent session
+    with client.websocket_connect("/ws/detect") as ws2:
+        assert main.active_sessions == 1
+        ws2.send_text(sample_base64_frame)
+        res2 = ws2.receive_json()
+        assert "session_id" in res2
+        session_id_2 = res2["session_id"]
+        assert session_id_1 != session_id_2
+        assert main.active_sessions == 1
+
+    # Clean teardown
+    assert main.active_sessions == 0

@@ -72,6 +72,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
+    isFrameInFlightRef.current = false;
     if (wsRef.current) {
       try {
         wsRef.current.onopen = null;
@@ -183,10 +184,28 @@ const CameraStream: React.FC<CameraStreamProps> = ({
 
       ws.onerror = (err) => {
         console.warn('WebSocket connection error:', err);
+        isFrameInFlightRef.current = false;
       };
 
       ws.onclose = () => {
         wsRef.current = null;
+        isFrameInFlightRef.current = false;
+
+        // Reset calibration if connection drops mid-calibration
+        onDetectionUpdate((prev: DetectionState) => {
+          if (prev.calibration_state === 'COLLECTING') {
+            return {
+              ...prev,
+              calibration_state: 'FAILED',
+              calibration_failure_reason: 'USER_ABORTED',
+              calibration_progress: 0,
+              status_message: 'Calibration interrupted by connection drop. Please retry.',
+              is_stale: true,
+            };
+          }
+          return prev;
+        });
+
         if (!isStreamingRef.current) {
           updateConnectionStatus('disconnected');
           return;
@@ -206,6 +225,11 @@ const CameraStream: React.FC<CameraStreamProps> = ({
         } else {
           updateConnectionStatus('error');
           console.error('Max WebSocket reconnect attempts reached.');
+          onDetectionUpdate((prev: DetectionState) => ({
+            ...prev,
+            status_message: 'Connection to detection server failed after multiple attempts. Ensure backend is running.',
+            is_stale: true,
+          }));
         }
       };
     } catch (err) {
@@ -381,6 +405,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({
 
     isStreamingRef.current = false;
     setIsStreaming(false);
+    isFrameInFlightRef.current = false;
     lastProcessedClientTsRef.current = 0;
     clientSessionIdRef.current = '';
     serverSessionIdRef.current = '';

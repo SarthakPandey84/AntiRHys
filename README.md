@@ -5,7 +5,7 @@
 [![Vite](https://img.shields.io/badge/Vite-646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-white.svg?style=for-the-badge&logo=opencv&logoColor=white)](https://opencv.org/)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-00897B.svg?style=for-the-badge&logo=google&logoColor=white)](https://developers.google.com/mediapipe)
-[![Tests Passing](https://img.shields.io/badge/Pytest-94%20Passed-brightgreen?style=for-the-badge&logo=pytest)](https://pytest.org/)
+[![Tests Passing](https://img.shields.io/badge/Pytest-99%20Passed-brightgreen?style=for-the-badge&logo=pytest)](https://pytest.org/)
 
 **AntiRHys** is a computer-vision research system investigating observable physiological and behavioral cues associated with **driver drowsiness**, **micro-sleeps**, and **road hypnosis (highway hypnosis)**.
 
@@ -43,10 +43,11 @@ The project currently provides an interactive, responsive full-stack demonstrati
 19. [Testing, Linting & Build Verification](#19-testing-linting--build-verification)
 20. [Empirical Benchmarking & Latency Profiles](#20-empirical-benchmarking--latency-profiles)
 21. [Security & Privacy Guardrails](#21-security--privacy-guardrails)
-22. [Known Limitations & Confounders](#22-known-limitations--confounders)
-23. [Product Roadmap](#23-product-roadmap)
-24. [Contribution Guidelines](#24-contribution-guidelines)
-25. [Credits & License](#25-credits--license)
+22. [Deployment Health Checks & Smoke Testing](#22-deployment-health-checks--smoke-testing)
+23. [Known Limitations & Confounders](#23-known-limitations--confounders)
+24. [Product Roadmap](#24-product-roadmap)
+25. [Contribution Guidelines](#25-contribution-guidelines)
+26. [Credits & License](#26-credits--license)
 
 ---
 
@@ -55,7 +56,7 @@ The project currently provides an interactive, responsive full-stack demonstrati
 AntiRHys is an active **research prototype and demonstration harness**.
 
 - **Detection Engine:** Implemented with verified mathematical Eye Aspect Ratio (EAR), rolling 60-second Percentage of Eye Closure (PERCLOS), blink dynamic tracking, and an independent monotonic temporal state machine.
-- **Verification Level:** Evaluated through 94 deterministic automated tests and simulated driver behavioral benchmarks. It is **not yet validated on in-vehicle naturalistic driving cohorts**.
+- **Verification Level:** Evaluated through 99 deterministic automated tests and simulated driver behavioral benchmarks. It is **not yet validated on in-vehicle naturalistic driving cohorts**.
 - **Interface:** Responsive web dashboard (desktop, tablet, and smartphone web browsers) connected to a local or remote FastAPI WebSocket service.
 
 ---
@@ -365,14 +366,15 @@ The web dashboard is fully optimized for smartphones and tablets:
 ### Frontend (`frontend/.env`)
 | Variable | Default (Development) | Purpose |
 | :--- | :--- | :--- |
-| `VITE_WS_URL` | `ws://localhost:8000/ws/detect` | Target WebSocket URL (`wss://` required in production HTTPS). |
-| `VITE_AUTH_TOKEN` | *(empty)* | Optional authentication secret token sent via query parameter. |
+| `VITE_WS_URL` | `ws://localhost:8000/ws/detect` | Target WebSocket URL (`wss://` required in production HTTPS). Automatically defaults to `wss://antirhys-backend.onrender.com/ws/detect` when deployed to non-localhost hosts. |
+| `VITE_AUTH_TOKEN` | *(empty)* | Optional authorization token sent via query parameter. **Public Client Disclosure:** Statically bundled into client JS at build time; filters scanner bots, does not protect server secrets. |
 
 ### Backend (`backend/.env`)
 | Variable | Default | Purpose |
 | :--- | :--- | :--- |
-| `ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Comma-separated CORS and WebSocket Origin whitelist. |
-| `AUTH_TOKEN` | *(empty)* | Shared secret token required for client connection authorization. |
+| `ENVIRONMENT` | `development` | Environment mode (`production` or `development`). When `production`, missing Origin headers and unauthorized cross-origin requests are rejected. |
+| `ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Comma-separated CORS and WebSocket Origin whitelist. In production, set to official frontend domain (`https://antirhys.vercel.app`). Wildcard `*.vercel.app` subdomains are strictly forbidden. |
+| `AUTH_TOKEN` | *(empty)* | Shared secret token required for client connection authorization. Validated using constant-time comparison (`hmac.compare_digest`). |
 | `MAX_CONCURRENT_SESSIONS` | `10` | Maximum simultaneous active WebSocket connections. |
 | `SESSION_LOG_PATH` | `session_log.csv` | File destination for audit telemetry records. |
 | `EAR_THRESHOLD` | `0.25` | Default uncalibrated eye closure threshold. |
@@ -388,12 +390,12 @@ The web dashboard is fully optimized for smartphones and tablets:
 All changes in the AntiRHys codebase undergo rigorous verification:
 
 ```bash
-# 1. Run all backend tests (94 tests):
+# 1. Run all backend tests (99 tests):
 cd backend
 # On Windows PowerShell:
-$env:PYTHONPATH="backend"; pytest tests/ -v
+$env:PYTHONPATH="backend"; $env:MPLCONFIGDIR="backend"; backend\venv\Scripts\python.exe -m pytest tests/ -v
 # On Linux/macOS:
-PYTHONPATH="backend" pytest tests/ -v
+PYTHONPATH="backend" MPLCONFIGDIR="backend" pytest tests/ -v
 
 # 2. Run frontend type checking & ESLint (0 errors, 0 warnings):
 cd ../frontend
@@ -403,8 +405,8 @@ npm run lint
 npm run build
 ```
 
-### Verified Test Suite Breakdown (94 Total Passed):
-- `tests/test_api.py` (13 tests): Health checks, WebSocket lifecycle, server-authoritative session IDs, concurrency bounds, token authentication, origin validation (including Vercel deployment origins), payload schema validation.
+### Verified Test Suite Breakdown (99 Total Passed):
+- `tests/test_api.py` (18 tests): Health checks (`/health` schema, environment verification), WebSocket lifecycle, server-authoritative session IDs, concurrency bounds, constant-time token authentication (`hmac.compare_digest`), origin validation (trusted production origin `https://antirhys.vercel.app`, rejection of arbitrary `*.vercel.app` tenant subdomains, development mode localhost fallback vs strict production rejection, whitespace/slash sanitization, wildcard mode, unauthenticated default behavior), WebSocket disconnect/reconnect session lifecycle.
 - `tests/test_baseline_calibrator.py` (6 tests): Valid calibration, insufficient duration rejection, tracking ratio gates, drowsiness during calibration rejection, threshold clamping bounds ($0.18\text{--}0.32$), JSON serialization.
 - `tests/test_baseline_integration.py` (15 tests): Active threshold consumption, safe fallback on failed calibration, file persistence error resilience, WebSocket control commands without frames, dynamic camera resolution change invalidation, non-monotonic timestamp clamping, user abort command lifecycle, repeated start idempotency, client session ID stale-packet filtering, prior baseline clearing on failure/abort, mid-calibration resolution shift abort, client timestamp echoing, and retry after failure.
 - `tests/test_detector.py` (13 tests): EAR geometry, degenerate zero-width points, non-finite values, state machine transitions, blink counting, tracking loss isolation.
@@ -452,12 +454,74 @@ python benchmark_pipeline.py --iterations 100 --width 640 --height 480
 1. **Zero Video Retention:** Video frames exist exclusively in volatile RAM buffers during inference and are garbage-collected immediately. No video files or facial crops are ever written to disk.
 2. **Volatile Biometrics:** Facial mesh coordinates are used instantaneously to derive scalar metrics and discarded. No biometric embeddings or face recognition vectors are persisted.
 3. **In-Flight Backpressure Control:** The frontend client maintains an `isFrameInFlight` lock and inspects `ws.bufferedAmount`, preventing network buffer bloat and stale frame queuing.
-4. **Origin & Token Authorization:** WebSockets support origin restrictions (`ALLOWED_ORIGINS`) and secret tokens (`AUTH_TOKEN`) to prevent Cross-Site WebSocket Hijacking (CSWSH).
-5. **Data Minimization:** Local audit logs (`session_log.csv`) store strictly anonymous mathematical telemetry (timestamps, EAR values, states).
+4. **Strict WebSocket Origin Validation (Anti-CSWSH):** WebSockets strictly validate the browser `Origin` header against configured allowed origins (`ALLOWED_ORIGINS`). In production (`ENVIRONMENT=production` or Render deployments), blanket wildcard acceptance of `*.vercel.app` is eliminated to prevent Cross-Site WebSocket Hijacking from arbitrary Vercel tenants. Requests with missing Origin headers are strictly rejected in production.
+5. **Constant-Time Token Comparison:** When `AUTH_TOKEN` is configured, client tokens (via query parameter or `Authorization: Bearer` header) are compared using `hmac.compare_digest` to prevent timing side-channel vulnerabilities.
+6. **Client-Side Secret Isolation:** Clear security disclosures specify that `VITE_*` environment variables are statically compiled into public browser JavaScript bundles. Private database credentials, infrastructure keys, and administrative secrets are strictly forbidden from frontend configuration.
+7. **Connection Drop & Calibration Recovery:** When a WebSocket disconnects or errors, in-flight frame locks are released immediately and active calibration collection states are transitioned to `FAILED` with explicit user notices, preventing UI deadlocks.
+8. **Data Minimization:** Local audit logs (`session_log.csv`) store strictly anonymous mathematical telemetry (timestamps, EAR values, states).
 
 ---
 
-## 22. Known Limitations & Confounders
+## 22. Deployment Health Checks & Smoke Testing
+
+### Live Production Deployments:
+- **Frontend Dashboard:** [https://antirhys.vercel.app/](https://antirhys.vercel.app/)
+- **Backend Service:** [https://antirhys-backend.onrender.com](https://antirhys-backend.onrender.com)
+
+> [!NOTE]
+> **Render Free-Tier Spin-Down:** The Render backend service automatically spins down after 15 minutes of inactivity. When accessed after idling, the first HTTP request or WebSocket handshake initiates an instance spin-up requiring ~30–50 seconds. The frontend features automated exponential backoff reconnection (up to 20 attempts) and displays a clear "Connecting..." status indicating server wake-up.
+
+### Repeatable Health-Check Procedure (`/health`):
+```bash
+# Check service status and active telemetry
+curl -s https://antirhys-backend.onrender.com/health
+```
+Expected JSON Response:
+```json
+{
+  "status": "healthy",
+  "service": "AntiRHys Drowsiness Detection API",
+  "version": "2.0.0",
+  "environment": "production",
+  "active_sessions": 0,
+  "max_concurrent_sessions": 10,
+  "auth_enabled": false,
+  "timestamp": 1793225668.578
+}
+```
+
+### Documented Manual WebSocket Smoke Test (`/ws/detect`):
+To verify that the detection pipeline accepts frames and responds with telemetry over a live WebSocket connection:
+
+```bash
+# Run a quick python smoke test against the live backend
+python -c "
+import asyncio, websockets, json, base64, cv2, numpy as np
+
+async def test_live_ws():
+    uri = 'wss://antirhys-backend.onrender.com/ws/detect'
+    print(f'Connecting to {uri}...')
+    async with websockets.connect(uri, origin='https://antirhys.vercel.app') as ws:
+        blank = np.zeros((240, 320, 3), dtype=np.uint8)
+        _, buf = cv2.imencode('.jpg', blank)
+        b64 = f'data:image/jpeg;base64,{base64.b64encode(buf).decode()}'
+        await ws.send(b64)
+        response = await ws.recv()
+        data = json.loads(response)
+        print('Live response received:', {
+            'session_id': data.get('session_id'),
+            'detection_state': data.get('detection_state'),
+            'tracking_state': data.get('tracking_state'),
+            'ear': data.get('ear'),
+        })
+
+asyncio.run(test_live_ws())
+"
+```
+
+---
+
+## 23. Known Limitations & Confounders
 
 - **Visible-Light Sensitivity:** Standard RGB cameras degrade significantly in low-light night driving or harsh direct sunlight. Commercial deployment requires active Near-Infrared (NIR) illumination.
 - **Head Rotations & Occlusion:** Extreme head pitch ($> 30^\circ$) or yaw ($> 45^\circ$) occludes ocular landmarks, triggering `TRACKING_LOST`.
@@ -467,7 +531,7 @@ python benchmark_pipeline.py --iterations 100 --width 640 --height 480
 
 ---
 
-## 23. Product Roadmap
+## 24. Product Roadmap
 
 ```mermaid
 flowchart LR
@@ -519,7 +583,7 @@ flowchart LR
 
 ---
 
-## 24. Contribution Guidelines
+## 25. Contribution Guidelines
 
 Contributions from computer-vision engineers, automotive human-factors researchers, and embedded developers are welcome:
 
@@ -532,7 +596,7 @@ Contributions from computer-vision engineers, automotive human-factors researche
 
 ---
 
-## 25. Credits & License
+## 26. Credits & License
 
 - **Author & Maintainer:** Sarthak Pandey ([@SarthakPandey84](https://github.com/SarthakPandey84))
 - **Repository:** [https://github.com/SarthakPandey84/AntiRHys](https://github.com/SarthakPandey84/AntiRHys)
