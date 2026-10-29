@@ -17,6 +17,9 @@ fontlist-*.json
 
 # Logs & Diagnostics
 session_log.csv
+session_log.csv.*
+driver_profile.json
+backend/driver_profile.json
 *.log
 backend/session_log.csv
 

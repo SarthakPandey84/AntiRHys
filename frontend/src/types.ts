@@ -70,3 +70,71 @@ export interface DetectionState {
   status?: string;
   error?: string;
 }
+
+export type AppView = 'monitor' | 'insights';
+
+export type InsightsSubView = 'live' | 'history' | 'profile';
+
+export type EventSeverity = 'INFO' | 'WARNING' | 'CRITICAL' | 'ERROR';
+
+export interface SessionSummary {
+  session_id: string;
+  start_time: string;
+  end_time: string;
+  duration_sec: number;
+  total_events: number;
+  alert_count: number;
+  error_count: number;
+  mean_ear: number;
+  mean_perclos: number;
+  tracking_coverage_ratio: number;
+  quality_status: 'GOOD' | 'FAIR' | 'INSUFFICIENT_TRACKING' | string;
+  calibrated: boolean;
+  calibrated_threshold: number | null;
+  has_incomplete_data?: boolean;
+}
+
+export interface LogEvent {
+  timestamp: string;
+  timestamp_iso?: string;
+  session_id: string;
+  event_type: string;
+  severity: EventSeverity;
+  detection_state?: string;
+  eye_state?: string;
+  tracking_state?: string;
+  ear?: number | null;
+  blink_count?: number | null;
+  closure_duration?: number | null;
+  perclos?: number | null;
+  perclos_status?: string;
+  ear_threshold?: number | null;
+  calibration_state?: string;
+  detector_version?: string;
+  notes?: string;
+}
+
+export interface SessionDetail {
+  session_id: string;
+  summary: SessionSummary;
+  events: LogEvent[];
+}
+
+export interface PersonalizationProfileData {
+  profile_version: number;
+  driver_id: string;
+  is_active: boolean;
+  baseline_open_ear: number | null;
+  personalized_threshold: number;
+  min_threshold_bound: number;
+  max_threshold_bound: number;
+  sample_count: number;
+  duration_sec: number;
+  tracking_ratio: number;
+  calibration_timestamp: number | null;
+  quality_status: string;
+  detector_version: string;
+  update_reason: string;
+  created_at?: number;
+  updated_at?: number;
+}

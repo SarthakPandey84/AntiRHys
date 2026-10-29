@@ -14,12 +14,13 @@ import json
 import hmac
 import math
 import os
+import re
 import time
 from typing import Optional, Tuple
 import uuid
 
 import cv2
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status, Request, HTTPException, Depends, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 import mediapipe as mp
 import numpy as np
@@ -34,8 +35,9 @@ from detector import (
     RIGHT_EYE_INDICES
 )
 from head_pose import HEAD_POSE_LANDMARK_INDICES
-from baseline_calibrator import CalibrationState
+from baseline_calibrator import CalibrationState, CalibrationFailureReason, DriverBaseline
 from session_logger import SessionLogger
+from profile_manager import ProfileManager
 
 # ---------------------------------------------------------------------------
 # Configuration & Limits
@@ -102,6 +104,9 @@ AUTH_TOKEN = os.getenv("AUTH_TOKEN", "").strip()
 
 # Global Session Logger
 session_logger = SessionLogger(os.getenv("SESSION_LOG_PATH", "session_log.csv"))
+
+# Global Personalization Profile Manager
+profile_manager = ProfileManager(os.getenv("PROFILE_PATH", "driver_profile.json"))
 
 def safe_log_event(**kwargs) -> None:
     """Safely log an event without allowing logging exceptions to crash detection sessions."""
@@ -212,6 +217,196 @@ def is_token_authorized(websocket: WebSocket) -> bool:
             return True
 
     return False
+
+
+def verify_http_origin(request: Request):
+    """
+    Validate HTTP origin header against configured CORS rules.
+    Allows requests with no Origin header (direct scripts, curl, or same-origin requests).
+    When Origin is present, enforces CORS origin allowlist.
+    """
+    origin = request.headers.get("origin")
+    if origin and not is_origin_allowed(origin):
+        raise HTTPException(status_code=403, detail="Origin not allowed")
+
+
+def verify_http_auth(request: Request):
+    """
+    Validate client authorization token for HTTP endpoints when AUTH_TOKEN is configured.
+    Supports query parameter ?token=... or Authorization: Bearer <token>.
+    Uses constant-time comparison to protect against timing attacks.
+    """
+    if not AUTH_TOKEN:
+        return
+
+    # Check query param (e.g. for direct download links in browser)
+    token = request.query_params.get("token")
+    if token and hmac.compare_digest(token, AUTH_TOKEN):
+        return
+
+    # Check Authorization header
+    auth_header = request.headers.get("authorization")
+    if auth_header:
+        parts = auth_header.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer" and hmac.compare_digest(parts[1], AUTH_TOKEN):
+            return
+
+    raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+# ---------------------------------------------------------------------------
+# Phase 14 Insights, Session Logs & Personalization REST Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/sessions")
+async def list_sessions(
+    request: Request,
+    _auth=Depends(verify_http_auth),
+    _origin=Depends(verify_http_origin)
+):
+    """List summary statistics for all recorded driving sessions."""
+    sessions = session_logger.get_sessions()
+    return {"sessions": sessions, "total_sessions": len(sessions)}
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session_detail(
+    session_id: str,
+    request: Request,
+    _auth=Depends(verify_http_auth),
+    _origin=Depends(verify_http_origin)
+):
+    """Retrieve detailed event timeline and summary metrics for a specific session."""
+    timeline = session_logger.get_session_timeline(session_id)
+    if not timeline or not timeline.get("events"):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+    return timeline
+
+
+@app.get("/api/sessions/{session_id}/export")
+async def export_session(
+    session_id: str,
+    request: Request,
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    _auth=Depends(verify_http_auth),
+    _origin=Depends(verify_http_origin)
+):
+    """Export a single session in CSV or JSON format."""
+    timeline = session_logger.get_session_timeline(session_id)
+    if not timeline or not timeline.get("events"):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+
+    safe_filename_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', session_id)[:64] or "session"
+
+    if format.lower() == "csv":
+        csv_content = session_logger.export_session_csv(session_id)
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="antirhys_{safe_filename_id}.csv"'
+            }
+        )
+    else:
+        json_content = session_logger.export_session_json(session_id)
+        return Response(
+            content=json.dumps(json_content, indent=2),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="antirhys_{safe_filename_id}.json"'
+            }
+        )
+
+
+@app.get("/api/export/all")
+async def export_all(
+    request: Request,
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    _auth=Depends(verify_http_auth),
+    _origin=Depends(verify_http_origin)
+):
+    """Export all recorded sessions in CSV or JSON format."""
+    if format.lower() == "csv":
+        csv_content = session_logger.export_all_csv()
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": 'attachment; filename="antirhys_all_sessions.csv"'
+            }
+        )
+    else:
+        json_content = session_logger.export_all_json()
+        return Response(
+            content=json.dumps(json_content, indent=2),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": 'attachment; filename="antirhys_all_sessions.json"'
+            }
+        )
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(
+    session_id: str,
+    request: Request,
+    _auth=Depends(verify_http_auth),
+    _origin=Depends(verify_http_origin)
+):
+    """Delete all log records for a specific session."""
+    deleted = session_logger.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found or already deleted.")
+    return {"status": "success", "message": f"Session '{session_id}' deleted."}
+
+
+@app.delete("/api/sessions")
+async def clear_all_sessions(
+    request: Request,
+    _auth=Depends(verify_http_auth),
+    _origin=Depends(verify_http_origin)
+):
+    """Clear all session history and log files."""
+    session_logger.clear_all_logs()
+    return {"status": "success", "message": "All session logs have been cleared."}
+
+
+@app.get("/api/events/live")
+async def get_live_events(
+    request: Request,
+    limit: int = Query(100, ge=1, le=250),
+    session_id: Optional[str] = None,
+    _auth=Depends(verify_http_auth),
+    _origin=Depends(verify_http_origin)
+):
+    """Retrieve recent in-memory log events from the live ring buffer."""
+    events = session_logger.get_live_events(limit=limit, session_id=session_id)
+    return {"events": events, "count": len(events)}
+
+
+@app.get("/api/profile")
+async def get_driver_profile(
+    request: Request,
+    _auth=Depends(verify_http_auth),
+    _origin=Depends(verify_http_origin)
+):
+    """Retrieve current driver personalization profile and quality metrics."""
+    return profile_manager.get_profile()
+
+
+@app.post("/api/profile/reset")
+async def reset_driver_profile(
+    request: Request,
+    _auth=Depends(verify_http_auth),
+    _origin=Depends(verify_http_origin)
+):
+    """Reset driver personalization profile to factory defaults."""
+    reset_profile = profile_manager.reset_profile(reason="User requested profile reset via API")
+    return {
+        "status": "success",
+        "message": "Personalization profile reset to factory defaults.",
+        "profile": reset_profile
+    }
 
 
 def process_frame_sync(
@@ -336,17 +531,43 @@ async def detect_fatigue(websocket: WebSocket):
         await websocket.accept()
 
         detector = DrowsinessDetector(session_id=server_session_id)
+        # Load active personalized profile if available
+        profile_data = profile_manager.get_profile()
+        if profile_data.get("is_active") and profile_data.get("personalized_threshold"):
+            thresh = float(profile_data["personalized_threshold"])
+            open_ear = profile_data.get("baseline_open_ear") or (thresh / 0.80)
+            baseline = DriverBaseline(
+                driver_id=str(profile_data.get("driver_id", "driver")),
+                calibrated_at=float(profile_data.get("calibration_timestamp") or time.time()),
+                is_valid=True,
+                failure_reason=CalibrationFailureReason.NONE,
+                sample_count=int(profile_data.get("sample_count", 100)),
+                duration_sec=float(profile_data.get("duration_sec", 10.0)),
+                tracking_ratio=float(profile_data.get("tracking_ratio", 1.0)),
+                mean_open_ear=float(open_ear),
+                std_open_ear=0.02,
+                median_open_ear=float(open_ear),
+                p10_open_ear=round(open_ear * 0.95, 3),
+                p90_open_ear=round(open_ear * 1.05, 3),
+                personalized_closure_threshold=thresh,
+                personalized_perclos_threshold=thresh,
+            )
+            detector.apply_baseline(baseline)
+
         face_mesh = create_isolated_face_mesh()
 
         safe_log_event(
             session_id=server_session_id,
             event_type="SESSION_START",
+            ear_threshold=detector.config.ear_threshold,
+            calibration_state="IDLE",
             notes="Client connected and session started"
         )
 
         last_processed_monotonic = 0.0
         last_logged_detection_state = DetectionState.NORMAL
         last_logged_tracking_state = TrackingState.SEARCHING
+        last_calibration_state = CalibrationState.IDLE
 
         while True:
             raw_data = await websocket.receive_text()
@@ -418,15 +639,41 @@ async def detect_fatigue(websocket: WebSocket):
                         cmd_msg = f"Calibration started for {driver_id}"
                     elif cmd == "abort_calibration":
                         detector.abort_calibration()
+                        safe_log_event(
+                            session_id=server_session_id,
+                            event_type="CALIBRATION_ABORTED",
+                            calibration_state="ABORTED",
+                            notes="Calibration aborted by user"
+                        )
                         cmd_msg = "Calibration aborted"
                     elif cmd == "finalize_calibration":
-                        detector.finalize_calibration()
+                        baseline = detector.finalize_calibration()
+                        if baseline and baseline.is_valid:
+                            profile_manager.update_from_baseline(baseline, reason="User finalized calibration")
+                            safe_log_event(
+                                session_id=server_session_id,
+                                event_type="CALIBRATION_COMPLETE",
+                                ear_threshold=detector.config.ear_threshold,
+                                calibration_state="COMPLETED",
+                                notes=f"Baseline applied: threshold={detector.config.ear_threshold:.3f}"
+                            )
+                        else:
+                            reason_val = detector.calibrator.failure_reason.value if detector.calibrator else "UNKNOWN"
+                            safe_log_event(
+                                session_id=server_session_id,
+                                event_type="CALIBRATION_FAILED",
+                                calibration_state="FAILED",
+                                notes=f"Calibration rejected: {reason_val}"
+                            )
                         cmd_msg = "Calibration finalized"
                     elif cmd == "clear_baseline":
                         detector.clear_baseline()
+                        profile_manager.reset_profile(reason="User cleared baseline")
                         safe_log_event(
                             session_id=server_session_id,
                             event_type="BASELINE_CLEARED",
+                            ear_threshold=detector.config.ear_threshold,
+                            calibration_state="IDLE",
                             notes="Personalized baseline cleared"
                         )
                         cmd_msg = "Baseline cleared"
@@ -555,6 +802,29 @@ async def detect_fatigue(websocket: WebSocket):
                 await websocket.send_json(resp)
                 continue
 
+            # Check for calibration state transition
+            current_calib_state = detector.calibrator.state if detector.calibrator else CalibrationState.IDLE
+            if current_calib_state != last_calibration_state:
+                if current_calib_state == CalibrationState.COMPLETED:
+                    if detector.baseline and detector.baseline.is_valid:
+                        profile_manager.update_from_baseline(detector.baseline, reason="Automated baseline completion")
+                        safe_log_event(
+                            session_id=server_session_id,
+                            event_type="CALIBRATION_COMPLETE",
+                            ear_threshold=detector.config.ear_threshold,
+                            calibration_state="COMPLETED",
+                            notes=f"Baseline calibrated: threshold={detector.config.ear_threshold:.3f}"
+                        )
+                elif current_calib_state == CalibrationState.FAILED:
+                    failure_msg = detector.calibrator.failure_reason.value if detector.calibrator else "UNKNOWN"
+                    safe_log_event(
+                        session_id=server_session_id,
+                        event_type="CALIBRATION_FAILED",
+                        calibration_state="FAILED",
+                        notes=f"Calibration failed: {failure_msg}"
+                    )
+                last_calibration_state = current_calib_state
+
             # Check for significant state transitions to log
             if (result.detection_state != last_logged_detection_state or
                     result.tracking_state != last_logged_tracking_state):
@@ -582,6 +852,8 @@ async def detect_fatigue(websocket: WebSocket):
                     closure_duration=result.closure_duration,
                     perclos=result.perclos,
                     perclos_status=result.perclos_status,
+                    ear_threshold=detector.config.ear_threshold,
+                    calibration_state=detector.calibrator.state.value if detector.calibrator else "IDLE",
                     notes=result.status_message
                 )
 
@@ -608,6 +880,8 @@ async def detect_fatigue(websocket: WebSocket):
                 session_id=server_session_id,
                 event_type="SESSION_END",
                 detection_state=detector.detection_state.value,
+                ear_threshold=detector.config.ear_threshold,
+                calibration_state=(detector.calibrator.state.value if detector.calibrator else "IDLE"),
                 notes="Client disconnected gracefully"
             )
     except Exception as e:

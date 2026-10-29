@@ -40,3 +40,37 @@ export function getWebSocketUrl(): string {
 
   return resolvedUrl;
 }
+
+export function getAuthToken(): string | null {
+  const token = import.meta.env.VITE_AUTH_TOKEN;
+  return (token && typeof token === 'string' && token.trim().length > 0) ? token.trim() : null;
+}
+
+export function getApiBaseUrl(): string {
+  const envApiUrl = import.meta.env.VITE_API_URL;
+  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const isRemote = typeof window !== 'undefined' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1';
+
+  if (envApiUrl && typeof envApiUrl === 'string' && envApiUrl.trim().length > 0) {
+    let cleanUrl = envApiUrl.trim().replace(/\/+$/, '');
+    if (isHttps && cleanUrl.startsWith('http://')) {
+      cleanUrl = cleanUrl.replace(/^http:\/\//, 'https://');
+    }
+    return cleanUrl;
+  }
+
+  // Derive from WebSocket URL base
+  const wsUrl = getWebSocketUrl();
+  try {
+    const parsed = new URL(wsUrl);
+    const protocol = parsed.protocol === 'wss:' ? 'https:' : 'http:';
+    return `${protocol}//${parsed.host}`;
+  } catch {
+    if (isRemote) {
+      return 'https://antirhys-backend.onrender.com';
+    }
+    return isHttps ? 'https://localhost:8000' : 'http://localhost:8000';
+  }
+}
