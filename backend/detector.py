@@ -95,6 +95,9 @@ class DetectionConfig:
     blink_max_duration: float = 0.45
     # Grace period (seconds) of missing face frames before declaring TRACKING_LOST
     tracking_lost_timeout: float = 0.8
+    # Maximum tracking gap (seconds) across which eye closure continuity is preserved
+    # (unobserved gap time is excluded from closure duration; only observed frames accumulate)
+    tracking_gap_grace_sec: float = 0.30
     # Duration (seconds) eyes must remain continuously open to clear a drowsiness alert
     recovery_open_duration: float = 1.0
     # Minimum horizontal eye span to consider landmarks valid (prevents div by zero/degenerate points)
@@ -136,6 +139,7 @@ class DetectionConfig:
             "BLINK_MIN_DURATION": ("blink_min_duration", float),
             "BLINK_MAX_DURATION": ("blink_max_duration", float),
             "TRACKING_LOST_TIMEOUT": ("tracking_lost_timeout", float),
+            "TRACKING_GAP_GRACE_SEC": ("tracking_gap_grace_sec", float),
             "RECOVERY_OPEN_DURATION": ("recovery_open_duration", float),
             "PERCLOS_WINDOW_SEC": ("perclos_window_sec", float),
             "PERCLOS_MIN_OBSERVATION_SEC": ("perclos_min_observation_sec", float),
@@ -462,6 +466,8 @@ class DrowsinessDetector:
         self._eyes_closed_start_time: Optional[float] = None
         self._eyes_open_start_time: Optional[float] = None
         self._last_processed_time: Optional[float] = None
+        self._accumulated_closed_duration: float = 0.0
+        self._last_closed_seen_time: Optional[float] = None
 
         # Integrated PERCLOS calculator
         self.perclos_calculator = PerclosCalculator(
@@ -492,6 +498,8 @@ class DrowsinessDetector:
         self._eyes_closed_start_time = None
         self._eyes_open_start_time = None
         self._last_processed_time = None
+        self._accumulated_closed_duration = 0.0
+        self._last_closed_seen_time = None
         self._last_frame_resolution = None
         self.perclos_calculator.reset()
         if self.calibrator is not None:
@@ -556,6 +564,10 @@ class DrowsinessDetector:
         self.detection_state = DetectionState.UNAVAILABLE
         self.alarm_state = AlarmState.OFF
         self.tracking_state = TrackingState.LOST
+        self._accumulated_closed_duration = 0.0
+        self._last_closed_seen_time = None
+        self._eyes_closed_start_time = None
+        self._eyes_open_start_time = None
         self.perclos_calculator.reset()
 
     @property
@@ -565,8 +577,8 @@ class DrowsinessDetector:
     @property
     def closure_duration(self) -> float:
         if self._eyes_closed_start_time is not None and self._last_processed_time is not None:
-            return max(0.0, self._last_processed_time - self._eyes_closed_start_time)
-        return 0.0
+            return self._accumulated_closed_duration + max(0.0, self._last_processed_time - self._eyes_closed_start_time)
+        return self._accumulated_closed_duration
 
     @property
     def perclos(self) -> float:
@@ -607,6 +619,8 @@ class DrowsinessDetector:
         """
         if now is None:
             now = time.monotonic()
+        elif self._last_processed_time is not None and now < self._last_processed_time:
+            now = self._last_processed_time
 
         self._last_processed_time = now
         self.eye_state = EyeState.UNKNOWN
@@ -616,6 +630,8 @@ class DrowsinessDetector:
         # Reset continuous closure timers so corrupt frames don't count towards closure duration
         self._eyes_closed_start_time = None
         self._eyes_open_start_time = None
+        self._accumulated_closed_duration = 0.0
+        self._last_closed_seen_time = None
 
         # Exclude corrupt frame from valid observation time
         self.perclos_calculator.record_invalid_observation()
@@ -759,8 +775,19 @@ class DrowsinessDetector:
                 elif self.calibrator.state == CalibrationState.COMPLETED:
                     calib_prog = 1.0
 
-            # Reset closure timer so when face returns, stale time isn't retained
-            self._eyes_closed_start_time = None
+            # Preserve confirmed closed duration prior to tracking gap; unobserved gap time is excluded
+            if self._eyes_closed_start_time is not None:
+                if self._last_closed_seen_time is not None:
+                    self._accumulated_closed_duration += max(0.0, self._last_closed_seen_time - self._eyes_closed_start_time)
+                self._eyes_closed_start_time = None
+
+            # Reset accumulated closure if gap exceeds grace period (microsecond precision tolerance)
+            if self._last_closed_seen_time is not None:
+                gap = max(0.0, now - self._last_closed_seen_time)
+                if round(gap, 6) > self.config.tracking_gap_grace_sec:
+                    self._accumulated_closed_duration = 0.0
+                    self._last_closed_seen_time = None
+
             self._eyes_open_start_time = None
 
             # Record tracking loss in PERCLOS calculator (gap bounded)
@@ -824,9 +851,19 @@ class DrowsinessDetector:
         if left_ear == 0.0 and right_ear == 0.0:
             avg_ear = 0.0
             self.eye_state = EyeState.UNKNOWN
-            # Explicitly reset closure and recovery timers to prevent unknown geometry
-            # from counting towards continuous eye closure duration.
-            self._eyes_closed_start_time = None
+            # Preserve confirmed closed duration prior to degenerate geometry; unobserved time excluded
+            if self._eyes_closed_start_time is not None:
+                if self._last_closed_seen_time is not None:
+                    self._accumulated_closed_duration += max(0.0, self._last_closed_seen_time - self._eyes_closed_start_time)
+                self._eyes_closed_start_time = None
+
+            # Reset accumulated closure if gap exceeds grace period (microsecond precision tolerance)
+            if self._last_closed_seen_time is not None:
+                gap = max(0.0, now - self._last_closed_seen_time)
+                if round(gap, 6) > self.config.tracking_gap_grace_sec:
+                    self._accumulated_closed_duration = 0.0
+                    self._last_closed_seen_time = None
+
             self._eyes_open_start_time = None
             current_closure_duration = 0.0
             status_msg = "Invalid eye landmark geometry."
@@ -865,11 +902,21 @@ class DrowsinessDetector:
 
             if is_closed:
                 # Eye is currently closed
-                if self._eyes_closed_start_time is None:
-                    self._eyes_closed_start_time = now
                 self._eyes_open_start_time = None
 
-                current_closure_duration = max(0.0, now - self._eyes_closed_start_time)
+                # If resuming after a tracking gap, check if gap exceeded grace period
+                if self._last_closed_seen_time is not None and self._eyes_closed_start_time is None:
+                    gap = max(0.0, now - self._last_closed_seen_time)
+                    if round(gap, 6) > self.config.tracking_gap_grace_sec:
+                        # Tracking gap exceeded grace period; discard prior accumulated closure
+                        self._accumulated_closed_duration = 0.0
+                        self._last_closed_seen_time = None
+
+                if self._eyes_closed_start_time is None:
+                    self._eyes_closed_start_time = now
+
+                self._last_closed_seen_time = now
+                current_closure_duration = self._accumulated_closed_duration + max(0.0, now - self._eyes_closed_start_time)
 
                 # Check if closure duration exceeds threshold
                 if current_closure_duration >= self.config.closure_duration_threshold:
@@ -879,6 +926,10 @@ class DrowsinessDetector:
                         f"Possible drowsiness detected! Eyes closed for {current_closure_duration:.1f}s."
                     )
                 else:
+                    if self.alarm_state == AlarmState.TRIGGERED:
+                        self.detection_state = DetectionState.POSSIBLE_DROWSINESS
+                    else:
+                        self.detection_state = DetectionState.NORMAL
                     status_msg = f"Eyes closed ({current_closure_duration:.1f}s)..."
             else:
                 # Eye is currently open
@@ -888,10 +939,18 @@ class DrowsinessDetector:
 
                 # If eyes were previously closed, check if it was a normal blink
                 if self._eyes_closed_start_time is not None:
-                    closed_duration = max(0.0, now - self._eyes_closed_start_time)
-                    if self.config.blink_min_duration <= closed_duration <= self.config.blink_max_duration:
-                        self.blink_count += 1
-                    self._eyes_closed_start_time = None
+                    closed_duration = self._accumulated_closed_duration + max(0.0, now - self._eyes_closed_start_time)
+                elif self._last_closed_seen_time is not None and round(max(0.0, now - self._last_closed_seen_time), 6) <= self.config.tracking_gap_grace_sec:
+                    closed_duration = self._accumulated_closed_duration
+                else:
+                    closed_duration = 0.0
+
+                if self.config.blink_min_duration <= closed_duration <= self.config.blink_max_duration:
+                    self.blink_count += 1
+
+                self._eyes_closed_start_time = None
+                self._last_closed_seen_time = None
+                self._accumulated_closed_duration = 0.0
 
                 # Hysteresis for clearing an active alarm
                 open_duration = max(0.0, now - self._eyes_open_start_time)
