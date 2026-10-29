@@ -15,7 +15,8 @@ export type CalibrationFailureReason =
   | 'LOW_TRACKING_RATIO'
   | 'SUSPECTED_DROWSINESS'
   | 'EXTREME_EAR_OUTLIER'
-  | 'USER_ABORTED';
+  | 'USER_ABORTED'
+  | 'CONNECTION_DROPPED';
 
 export type SystemDetectionState =
   | 'IDLE'

@@ -157,6 +157,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({
               ...prev,
               command: data.command,
               status: data.status,
+              status_message: data.status_message ?? prev.status_message,
               calibration_state: data.calibration_state ?? prev.calibration_state,
               calibration_progress: data.calibration_progress ?? prev.calibration_progress,
               calibration_failure_reason: data.calibration_failure_reason ?? prev.calibration_failure_reason,
@@ -197,9 +198,9 @@ const CameraStream: React.FC<CameraStreamProps> = ({
             return {
               ...prev,
               calibration_state: 'FAILED',
-              calibration_failure_reason: 'USER_ABORTED',
+              calibration_failure_reason: 'CONNECTION_DROPPED',
               calibration_progress: 0,
-              status_message: 'Calibration interrupted by connection drop. Please retry.',
+              status_message: 'Calibration interrupted by connection drop. Please reconnect and retry.',
               is_stale: true,
             };
           }
@@ -265,6 +266,9 @@ const CameraStream: React.FC<CameraStreamProps> = ({
 
   useEffect(() => {
     onRegisterSendCommand?.(sendCommand);
+    return () => {
+      onRegisterSendCommand?.(null as unknown as ((command: string, extra?: Record<string, unknown>) => boolean));
+    };
   }, [onRegisterSendCommand, sendCommand]);
 
   // Watchdog timer to flag stale detection frames

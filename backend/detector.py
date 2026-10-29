@@ -537,6 +537,14 @@ class DrowsinessDetector:
             return baseline
         return DriverBaseline.default_fallback("anonymous")
 
+    def _check_calibration_completion(self, now: float) -> None:
+        """Finalize calibration if the collection window target duration has elapsed."""
+        if self.calibrator and self.calibrator.state == CalibrationState.COLLECTING:
+            if self.calibrator._start_time is not None:
+                dur = now - self.calibrator._start_time
+                if dur >= self.calibrator.config.target_duration_sec:
+                    self.finalize_calibration(now)
+
     def apply_baseline(self, baseline: DriverBaseline) -> bool:
         """
         Safely consume personalized driver baseline into running detector and PERCLOS calculator.
@@ -764,6 +772,17 @@ class DrowsinessDetector:
             # Record sample in active calibrator (invalid observation)
             if self.calibrator and self.calibrator.state == CalibrationState.COLLECTING:
                 self.calibrator.add_sample(timestamp=now, ear=0.0, face_detected=False, is_valid_geometry=False)
+                self._check_calibration_completion(now)
+
+            if lost_duration >= self.config.tracking_lost_timeout:
+                self.tracking_state = TrackingState.LOST
+                status_msg = f"Face tracking lost ({lost_duration:.1f}s)."
+                if self.calibrator and self.calibrator.state == CalibrationState.COLLECTING:
+                    self.calibrator.abort()
+                    self.calibrator.failure_reason = CalibrationFailureReason.LOW_TRACKING_RATIO
+            else:
+                self.tracking_state = TrackingState.SEARCHING
+                status_msg = "Face temporarily obscured or searching..."
 
             calib_state = self.calibrator.state.value if self.calibrator else "IDLE"
             calib_reason = self.calibrator.failure_reason.value if (self.calibrator and self.calibrator.state == CalibrationState.FAILED) else "NONE"
@@ -794,13 +813,6 @@ class DrowsinessDetector:
             self.perclos_calculator.record_invalid_observation()
             perclos, p_valid, p_status, _, _ = self.perclos_calculator.compute_perclos(now)
             p_warning = p_valid and (perclos >= self.config.perclos_warning_threshold)
-
-            if lost_duration >= self.config.tracking_lost_timeout:
-                self.tracking_state = TrackingState.LOST
-                status_msg = f"Face tracking lost ({lost_duration:.1f}s)."
-            else:
-                self.tracking_state = TrackingState.SEARCHING
-                status_msg = "Face temporarily obscured or searching..."
 
             return DetectionResult(
                 timestamp=now,
@@ -871,6 +883,7 @@ class DrowsinessDetector:
 
             if self.calibrator and self.calibrator.state == CalibrationState.COLLECTING:
                 self.calibrator.add_sample(timestamp=now, ear=0.0, face_detected=True, is_valid_geometry=False)
+                self._check_calibration_completion(now)
         else:
             # Average valid eye EARs
             if left_ear > 0.0 and right_ear > 0.0:
@@ -890,11 +903,7 @@ class DrowsinessDetector:
                     face_detected=True,
                     is_valid_geometry=is_geom_valid
                 )
-                if self.calibrator._start_time is not None:
-                    dur = now - self.calibrator._start_time
-                    target = self.calibrator.config.target_duration_sec
-                    if dur >= target and len(self.calibrator._samples) >= self.calibrator.config.min_valid_samples:
-                        self.finalize_calibration(now)
+                self._check_calibration_completion(now)
 
             # Determine instantaneous eye state
             is_closed = avg_ear < self.config.ear_threshold

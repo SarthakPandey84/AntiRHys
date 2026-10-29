@@ -119,25 +119,49 @@ const Dashboard: React.FC<DashboardProps> = ({
   const isCommandActive = commandPending && connectionStatus === 'connected';
 
   const handleStartCalibration = () => {
-    if (isCommandActive || !onSendCommand) return;
+    if (isCommandActive) return;
+    if (!onSendCommand) {
+      console.warn('Cannot start calibration: command sender is not available.');
+      return;
+    }
     setCommandPending(true);
-    onSendCommand('start_calibration', { driver_id: 'driver' });
+    const sent = onSendCommand('start_calibration', { driver_id: 'driver' });
+    if (!sent) {
+      setCommandPending(false);
+      return;
+    }
     if (commandTimeoutRef.current !== null) clearTimeout(commandTimeoutRef.current);
     commandTimeoutRef.current = window.setTimeout(() => setCommandPending(false), 800);
   };
 
   const handleAbortCalibration = () => {
-    if (isCommandActive || !onSendCommand) return;
+    if (isCommandActive) return;
+    if (!onSendCommand) {
+      console.warn('Cannot abort calibration: command sender is not available.');
+      return;
+    }
     setCommandPending(true);
-    onSendCommand('abort_calibration');
+    const sent = onSendCommand('abort_calibration');
+    if (!sent) {
+      setCommandPending(false);
+      return;
+    }
     if (commandTimeoutRef.current !== null) clearTimeout(commandTimeoutRef.current);
     commandTimeoutRef.current = window.setTimeout(() => setCommandPending(false), 800);
   };
 
   const handleClearBaseline = () => {
-    if (isCommandActive || !onSendCommand) return;
+    if (isCommandActive) return;
+    if (!onSendCommand) {
+      console.warn('Cannot clear baseline: command sender is not available.');
+      return;
+    }
     setCommandPending(true);
-    onSendCommand('clear_baseline');
+    const sent = onSendCommand('clear_baseline');
+    if (!sent) {
+      setCommandPending(false);
+      return;
+    }
     if (commandTimeoutRef.current !== null) clearTimeout(commandTimeoutRef.current);
     commandTimeoutRef.current = window.setTimeout(() => setCommandPending(false), 800);
   };
@@ -146,6 +170,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     switch (reason) {
       case 'USER_ABORTED':
         return 'Calibration was aborted by user. Using standard default threshold (0.250).';
+      case 'CONNECTION_DROPPED':
+        return 'Calibration interrupted by connection drop. Please reconnect and retry.';
       case 'SUSPECTED_DROWSINESS':
         return 'Calibration rejected: excessive eye closure or drowsiness detected during window. Keep eyes open and stay attentive.';
       case 'LOW_TRACKING_RATIO':
@@ -448,6 +474,11 @@ const Dashboard: React.FC<DashboardProps> = ({
               {isIdle && (
                 <span className="audio-hint" style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                   (Start camera monitoring first)
+                </span>
+              )}
+              {!isIdle && isTrackingLost && (
+                <span className="audio-hint" style={{ fontSize: '0.75rem', color: '#fca5a5' }}>
+                  Face tracking is currently lost. Center face in camera before calibrating.
                 </span>
               )}
             </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import CameraStream from './components/CameraStream';
 import Dashboard from './components/Dashboard';
 import type { DetectionState, ConnectionStatus } from './types';
@@ -30,6 +30,13 @@ function App() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [sendCommandFn, setSendCommandFn] = useState<((command: string, extra?: Record<string, unknown>) => boolean) | null>(null);
 
+  const handleRegisterSendCommand = useCallback(
+    (fn: ((command: string, extra?: Record<string, unknown>) => boolean) | null) => {
+      setSendCommandFn(() => fn);
+    },
+    []
+  );
+
   return (
     <div className="app-container">
       <header className="header">
@@ -41,7 +48,7 @@ function App() {
         <CameraStream
           onDetectionUpdate={setDetectionState}
           onConnectionChange={setConnectionStatus}
-          onRegisterSendCommand={setSendCommandFn}
+          onRegisterSendCommand={handleRegisterSendCommand}
           landmarks={detectionState.landmarks}
         />
         <Dashboard
